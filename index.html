@@ -605,21 +605,73 @@ function renderTemplates(){const el=$('#templateList');
   });}
 $('#callTemplate').onclick=()=>{$$('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v==='tasks'));$$('.view').forEach(x=>x.classList.remove('active'));$('#v-tasks').classList.add('active');renderTemplates();window.scrollTo(0,0);};
 
-/* === timer (5/10/15 default 5min) === */
-let tTotal=5*60,tLeft=5*60,tRunning=false,tInt=null;
+/* === timer === */
+let tTotal=5*60,tLeft=5*60,tEndTime=0,tRunning=false,tInt=null;
 const RING=653.5;
-function renderTimer(){$('#timerDisp').textContent=`${pad(Math.floor(tLeft/60))}:${pad(tLeft%60)}`;
+const TIMER_KEY='mr_timer_state';
+
+function renderTimer(){
+  $('#timerDisp').textContent=`${pad(Math.floor(tLeft/60))}:${pad(tLeft%60)}`;
   $('#ring').style.strokeDashoffset=RING*(1-(tTotal?tLeft/tTotal:0));
-  $('#gauge').classList.toggle('running',tRunning);}
-function setTimer(min){tTotal=min*60;tLeft=tTotal;tRunning=false;clearInterval(tInt);$('#timerStart').textContent='開始';renderTimer();}
+  $('#gauge').classList.toggle('running',tRunning);
+}
+function setTimer(min){
+  tTotal=min*60;tLeft=tTotal;tEndTime=0;tRunning=false;clearInterval(tInt);
+  $('#timerStart').textContent='開始';localStorage.removeItem(TIMER_KEY);renderTimer();
+}
+function saveTimerState(){
+  if(tRunning){
+    localStorage.setItem(TIMER_KEY,JSON.stringify({running:true,endTime:tEndTime,total:tTotal,taskId:$('#timerTaskSel').value}));
+  }else if(tLeft>0&&tLeft<tTotal){
+    localStorage.setItem(TIMER_KEY,JSON.stringify({running:false,pausedLeft:tLeft,total:tTotal,taskId:$('#timerTaskSel').value}));
+  }else{
+    localStorage.removeItem(TIMER_KEY);
+  }
+}
+function startTimerTick(){
+  clearInterval(tInt);
+  tInt=setInterval(()=>{
+    tLeft=Math.max(0,Math.ceil((tEndTime-Date.now())/1000));
+    if(tLeft<=0){tLeft=0;tRunning=false;clearInterval(tInt);$('#timerStart').textContent='開始';localStorage.removeItem(TIMER_KEY);renderTimer();timerDone();}
+    else renderTimer();
+  },500);
+}
+function restoreTimerState(){
+  const raw=localStorage.getItem(TIMER_KEY);if(!raw)return;
+  try{
+    const st=JSON.parse(raw);tTotal=st.total;
+    const totalMin=tTotal/60;$$('.preset').forEach(p=>p.classList.toggle('on',+p.dataset.m===totalMin));
+    if(st.running){
+      const left=Math.ceil((st.endTime-Date.now())/1000);
+      if(left<=0){tLeft=0;localStorage.removeItem(TIMER_KEY);renderTimer();setTimeout(timerDone,100);}
+      else{
+        tLeft=left;tEndTime=st.endTime;
+        if(st.taskId){$('#timerTaskSel').value=st.taskId;const op=$('#timerTaskSel').selectedOptions[0];$('#timerTask').textContent=op&&op.value?op.text:'対象タスクなし';}
+        tRunning=true;$('#timerStart').textContent='一時停止';renderTimer();startTimerTick();startBgm();
+        toast('タイマーを再開しました ⏱');
+      }
+    }else{
+      tLeft=st.pausedLeft||tTotal;
+      if(st.taskId){$('#timerTaskSel').value=st.taskId;const op=$('#timerTaskSel').selectedOptions[0];$('#timerTask').textContent=op&&op.value?op.text:'対象タスクなし';}
+      renderTimer();
+    }
+  }catch(e){}
+}
 $('#presets').addEventListener('click',e=>{const b=e.target.closest('.preset');if(!b)return;$$('.preset').forEach(p=>p.classList.toggle('on',p===b));setTimer(+b.dataset.m);});
 $('#customSet').onclick=()=>{const m=+$('#customMin').value;if(m>0&&m<=180){$$('.preset').forEach(p=>p.classList.remove('on'));setTimer(m);toast(`${m}分に設定`);$('#customMin').value='';}};
-$('#timerTaskSel').onchange=e=>{const t=S.tasks.find(x=>x.id===e.target.value);$('#timerTask').textContent=t?t.title:'対象タスクなし';};
+$('#timerTaskSel').onchange=e=>{const t=S.tasks.find(x=>x.id===e.target.value);$('#timerTask').textContent=t?t.title:'対象タスクなし';saveTimerState();};
 $('#timerStart').onclick=()=>{
-  if(tRunning){tRunning=false;clearInterval(tInt);$('#timerStart').textContent='再開';renderTimer();return;}
-  if(tLeft<=0)return;tRunning=true;$('#timerStart').textContent='一時停止';renderTimer();startBgm();
-  tInt=setInterval(()=>{tLeft--;if(tLeft<=0){tLeft=0;tRunning=false;clearInterval(tInt);$('#timerStart').textContent='開始';renderTimer();timerDone();}else renderTimer();},1000);};
-$('#timerReset').onclick=()=>{tRunning=false;clearInterval(tInt);tLeft=tTotal;$('#timerStart').textContent='開始';renderTimer();stopAudio();};
+  if(tRunning){tRunning=false;clearInterval(tInt);$('#timerStart').textContent='再開';renderTimer();saveTimerState();return;}
+  if(tLeft<=0)return;
+  tRunning=true;tEndTime=Date.now()+tLeft*1000;$('#timerStart').textContent='一時停止';renderTimer();startBgm();saveTimerState();
+  if(navigator.serviceWorker?.controller)navigator.serviceWorker.controller.postMessage({type:'scheduleTimer',endTime:tEndTime,title:'タイマー終了',body:`${Math.round(tTotal/60)}分の集中が完了しました。`});
+  startTimerTick();
+};
+$('#timerReset').onclick=()=>{
+  tRunning=false;clearInterval(tInt);tLeft=tTotal;tEndTime=0;$('#timerStart').textContent='開始';
+  localStorage.removeItem(TIMER_KEY);renderTimer();stopAudio();
+  if(navigator.serviceWorker?.controller)navigator.serviceWorker.controller.postMessage({type:'cancelTimer'});
+};
 function fillTimerTasks(){const sel=$('#timerTaskSel');const cv=sel.value;
   sel.innerHTML='<option value="">対象タスクを選択（任意）</option>'+S.tasks.filter(t=>t.status!=='done').map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join('');
   sel.value=cv;}
@@ -824,8 +876,8 @@ function burst(){const cols=['#818cf8','#a5b4fc','#c7d2fe','#6366f1','#e0e7ff','
 
 /* === init === */
 function renderAll(){renderWake();renderHabits();renderHomeRoutine();renderStreak();renderArticle();renderTasks();renderTemplates();fillTimerTasks();renderReminders();updateNotifStatus();}
-(async function(){load();await openDB();renderAll();setTimer(5);renderAudio();scheduleReminders();
-  seedDefaultAudio(); // 初回起動時のみ432Hz/528HZデフォルトBGMを生成・保存
+(async function(){load();await openDB();renderAll();setTimer(5);restoreTimerState();renderAudio();scheduleReminders();
+  seedDefaultAudio();
   if('serviceWorker'in navigator){try{await navigator.serviceWorker.register('./sw.js');}catch(e){console.warn('SW:',e);}}
 })();
 </script>

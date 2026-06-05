@@ -39,8 +39,28 @@ self.addEventListener('fetch', (e) => {
 });
 
 // メインスレッドからの通知予約（ベストエフォート）
+let timerHandle = null;
 self.addEventListener('message', (e) => {
   const data = e.data || {};
+  if (data.type === 'scheduleTimer') {
+    if (timerHandle) clearTimeout(timerHandle);
+    const delay = data.endTime - Date.now();
+    if (delay > 0 && delay < 2147483647) {
+      timerHandle = setTimeout(() => {
+        timerHandle = null;
+        self.registration.showNotification(data.title || 'タイマー終了', {
+          body: data.body || '',
+          icon: './icon-192.png',
+          badge: './icon-192.png',
+          tag: 'timer-done',
+          vibrate: [200, 100, 200, 100, 200]
+        });
+      }, delay);
+    }
+  }
+  if (data.type === 'cancelTimer') {
+    if (timerHandle) { clearTimeout(timerHandle); timerHandle = null; }
+  }
   if (data.type === 'notify') {
     self.registration.showNotification(data.title || 'リマインダー', {
       body: data.body || '',
