@@ -1,10 +1,12 @@
-const CACHE = 'asa-routine-v1';
+const CACHE = 'asa-routine-v2';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './assets/audio/432Hz.mp3',
+  './assets/audio/528Hz.mp3'
 ];
 
 self.addEventListener('install', (e) => {

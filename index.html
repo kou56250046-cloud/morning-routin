@@ -739,16 +739,29 @@ async function generateToneBlob(freq){
   return audioBufferToWav(await ctx.startRendering());
 }
 async function seedDefaultAudio(){
-  if(localStorage.getItem('mr_audio_seeded'))return;
+  if(localStorage.getItem('mr_audio_seeded_v2'))return;
   try{
-    const[b432,b528]=await Promise.all([generateToneBlob(432),generateToneBlob(528)]);
+    // 旧バージョンで生成した合成トーンを削除
+    const existing=await dbAll();
+    for(const it of existing){
+      if(it.name==='432Hz 集中BGM'||it.name==='528Hz リラックスBGM'){
+        if(S.settings.selectedAudio===it.id)S.settings.selectedAudio=null;
+        await dbDel(it.id);
+      }
+    }
+    // 実MP3ファイルを取得してIndexedDBに登録
+    const[r432,r528]=await Promise.all([
+      fetch('./assets/audio/432Hz.mp3'),
+      fetch('./assets/audio/528Hz.mp3')
+    ]);
+    const[buf432,buf528]=await Promise.all([r432.arrayBuffer(),r528.arrayBuffer()]);
     const id432=uid(),id528=uid();
-    await dbPut({id:id432,name:'432Hz 集中BGM',type:'audio/wav',blob:b432});
-    await dbPut({id:id528,name:'528Hz リラックスBGM',type:'audio/wav',blob:b528});
+    await dbPut({id:id432,name:'432Hz.mp3',type:'audio/mpeg',blob:new Blob([buf432],{type:'audio/mpeg'})});
+    await dbPut({id:id528,name:'528Hz.mp3',type:'audio/mpeg',blob:new Blob([buf528],{type:'audio/mpeg'})});
     if(!S.settings.selectedAudio){S.settings.selectedAudio=id432;save();}
-    localStorage.setItem('mr_audio_seeded','1');
+    localStorage.setItem('mr_audio_seeded_v2','1');
     renderAudio();
-    toast('デフォルトBGMを追加しました 🎵');
+    toast('BGMを追加しました 🎵');
   }catch(e){console.warn('BGMシード失敗:',e);}
 }
 $('#loopSwitch').onclick=()=>{S.settings.loop=!S.settings.loop;player.loop=S.settings.loop;save();$('#loopSwitch').classList.toggle('on',S.settings.loop);};
