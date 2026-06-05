@@ -712,6 +712,45 @@ async function startBgm(){
   if(it)playAudio(it);
 }
 player.onended=()=>{if(!player.loop){playingId=null;renderAudio();}};
+
+/* === default BGM seed === */
+function audioBufferToWav(buf){
+  const sr=buf.sampleRate,data=buf.getChannelData(0),dl=data.length*2;
+  const ab=new ArrayBuffer(44+dl),v=new DataView(ab);
+  const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+  ws(0,'RIFF');v.setUint32(4,36+dl,true);ws(8,'WAVE');ws(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+  ws(36,'data');v.setUint32(40,dl,true);
+  let off=44;for(let i=0;i<data.length;i++){const s=Math.max(-1,Math.min(1,data[i]));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}
+  return new Blob([ab],{type:'audio/wav'});
+}
+async function generateToneBlob(freq){
+  const sr=44100,dur=10; // 10秒 = freq/0.1Hz の整数倍 → シームレスループ
+  const ctx=new OfflineAudioContext(1,sr*dur,sr);
+  const osc=ctx.createOscillator();osc.type='sine';osc.frequency.value=freq;
+  // 0.1Hz の LFO で息づかい感（±0.04の振幅変調）
+  const lfo=ctx.createOscillator();lfo.type='sine';lfo.frequency.value=0.1;
+  const lfoGain=ctx.createGain();lfoGain.gain.value=0.04;
+  const gain=ctx.createGain();gain.gain.value=0.28;
+  lfo.connect(lfoGain);lfoGain.connect(gain.gain);
+  osc.connect(gain);gain.connect(ctx.destination);
+  osc.start(0);lfo.start(0);osc.stop(dur);lfo.stop(dur);
+  return audioBufferToWav(await ctx.startRendering());
+}
+async function seedDefaultAudio(){
+  if(localStorage.getItem('mr_audio_seeded'))return;
+  try{
+    const[b432,b528]=await Promise.all([generateToneBlob(432),generateToneBlob(528)]);
+    const id432=uid(),id528=uid();
+    await dbPut({id:id432,name:'432Hz 集中BGM',type:'audio/wav',blob:b432});
+    await dbPut({id:id528,name:'528Hz リラックスBGM',type:'audio/wav',blob:b528});
+    if(!S.settings.selectedAudio){S.settings.selectedAudio=id432;save();}
+    localStorage.setItem('mr_audio_seeded','1');
+    renderAudio();
+    toast('デフォルトBGMを追加しました 🎵');
+  }catch(e){console.warn('BGMシード失敗:',e);}
+}
 $('#loopSwitch').onclick=()=>{S.settings.loop=!S.settings.loop;player.loop=S.settings.loop;save();$('#loopSwitch').classList.toggle('on',S.settings.loop);};
 $('#volSlider').oninput=e=>{S.settings.volume=+e.target.value;player.volume=S.settings.volume/100;save();};
 
@@ -773,6 +812,7 @@ function burst(){const cols=['#818cf8','#a5b4fc','#c7d2fe','#6366f1','#e0e7ff','
 /* === init === */
 function renderAll(){renderWake();renderHabits();renderHomeRoutine();renderStreak();renderArticle();renderTasks();renderTemplates();fillTimerTasks();renderReminders();updateNotifStatus();}
 (async function(){load();await openDB();renderAll();setTimer(5);renderAudio();scheduleReminders();
+  seedDefaultAudio(); // 初回起動時のみ432Hz/528HZデフォルトBGMを生成・保存
   if('serviceWorker'in navigator){try{await navigator.serviceWorker.register('./sw.js');}catch(e){console.warn('SW:',e);}}
 })();
 </script>
