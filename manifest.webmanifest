@@ -1,0 +1,17 @@
+{
+  "name": "あさのしたく — モーニングルーティン",
+  "short_name": "あさのしたく",
+  "description": "朝活を続けるための個人用モーニングルーティンアプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef7f1",
+  "theme_color": "#7ac8aa",
+  "lang": "ja",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
